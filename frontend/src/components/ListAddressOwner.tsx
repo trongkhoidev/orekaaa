@@ -10,20 +10,55 @@ import { SiBitcoinsv } from "react-icons/si";
 import Factory from '../../../out/Factory.sol/Factory.json';
 import { useToast } from '@chakra-ui/react';
 import { useRouter } from 'next/router';
+import fs from 'fs'; // Import fs để đọc file
 
 interface ListAddressOwnerProps {
     ownerAddress: string; // Đảm bảo ownerAddress là địa chỉ hợp lệ
+    page: number;
 }
 
-const ListAddressOwner: React.FC<ListAddressOwnerProps> = ({ ownerAddress = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" }) => {
+const ListAddressOwner: React.FC<ListAddressOwnerProps> = ({ ownerAddress = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", page }: { ownerAddress: string; page: number }) => {
     const [deployedContracts, setDeployedContracts] = useState<{ address: string; createDate: string }[]>([]); // Update type
-    const FactoryAddress = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"; // Thay YOUR_FACTORY_CONTRACT_ADDRESS bằng địa chỉ thực tế
     const [loading, setLoading] = useState<boolean>(true);
     const [isWalletConnected, setIsWalletConnected] = useState(false);
     const [balance, setBalance] = useState('');
     const [walletAddress, setWalletAddress] = useState('');
     const toast = useToast();
     const router = useRouter(); 
+
+    // Phân trang
+    const currentPage = page;
+    const contractsPerPage = 8;
+    const [currentContracts, setCurrentContracts] = useState<{ address: string; createDate: string }[]>([]);
+
+    //const [FactoryAddress, setFactoryAddress] = useState<string>('');
+    const FactoryAddress = "0x9A676e781A523b5d0C0e43731313A708CB607508";
+//   useEffect(() => {
+//     // Đọc địa chỉ từ file JSON
+//     const data = fs.readFileSync('deployed_address.json', 'utf8');
+//     const json = JSON.parse(data);
+//     setFactoryAddress(json.FactoryAddress);
+// }, []);
+    // Tính toán tổng số trang
+    const totalPages = Math.ceil(deployedContracts.length / contractsPerPage);
+    const handlePageChange = (page: number) => {
+        if (page !== currentPage) { // Chỉ thay đổi nếu page khác với currentPage hiện tại
+            router.push(`/listaddress/page${page}`);
+        }
+    };
+
+    useEffect(() => {
+        const indexOfLastContract = page * contractsPerPage;
+        const indexOfFirstContract = indexOfLastContract - contractsPerPage;
+        const newCurrentContracts = deployedContracts.slice(indexOfFirstContract, indexOfLastContract);
+        setCurrentContracts(newCurrentContracts);
+    }, [deployedContracts, page]);
+
+
+    // Gọi fetchDeployedContracts khi ownerAddress thay đổi
+    useEffect(() => {
+        fetchDeployedContracts();
+    }, [ownerAddress, page]);
 
     const connectWallet = async () => {
         if (typeof window.ethereum !== 'undefined') {
@@ -69,9 +104,10 @@ const ListAddressOwner: React.FC<ListAddressOwnerProps> = ({ ownerAddress = "0xf
     const fetchDeployedContracts = async () => {
         if (!ownerAddress) {
             console.error("Owner address is not provided");
+            setLoading(false);
             return;
         }
-
+        setLoading(true);
         console.log("Fetching contracts for owner address:", ownerAddress);
 
         const provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -89,10 +125,15 @@ const ListAddressOwner: React.FC<ListAddressOwnerProps> = ({ ownerAddress = "0xf
             setLoading(false);
         }
     };
+    useEffect(() => {
+        console.log("Component mounted. Owner address:", ownerAddress);
+      }, []);
 
     useEffect(() => {
         fetchDeployedContracts();
     }, [ownerAddress]);
+
+
 
     useEffect(() => {
         fetchDeployedContracts();
@@ -115,20 +156,31 @@ const ListAddressOwner: React.FC<ListAddressOwnerProps> = ({ ownerAddress = "0xf
     }, [ownerAddress]);
 
     const handleAddressClick = (address: string) => {
-        if (walletAddress === ownerAddress) {
-          router.push(`/owner?address=${address}`);
-        } else if (deployedContracts.some(contract => contract.address === address) && typeof address === 'string') {
-          router.push(`/customer?address=${address}&contractAddress=${address}`);
+        const contractDetails = deployedContracts.find(contract => contract.address === address);
+        
+        if (contractDetails) {
+            // Lưu contractAddress vào localStorage
+            localStorage.setItem('contractAddress', address);
+    
+            const targetPath = walletAddress === ownerAddress ? '/ownerdeploy' : '/customer';
+            
+            router.push({
+                pathname: targetPath,
+                query: {
+                    address,
+                    //currentPhase: contractDetails.currentPhase
+                },
+            });
         } else {
-          toast({
-            title: "Invalid address",
-            description: "The address you clicked is not valid.",
-            status: "error",
-            duration: 5000,
-            isClosable: true,
-          });
+            toast({
+                title: "Invalid address",
+                description: "The address you clicked is not valid.",
+                status: "error",
+                duration: 5000,
+                isClosable: true,
+            });
         }
-      };
+    };
     
 
     // Hàm deploy contract
@@ -259,7 +311,7 @@ const ListAddressOwner: React.FC<ListAddressOwnerProps> = ({ ownerAddress = "0xf
                     {loading ? (
                         <Text>Loading...</Text>
                     ) : deployedContracts.length > 0 ? (
-                        deployedContracts.map(({ address, createDate }, index) => (
+                        currentContracts.map(({ address, createDate }, index) => (
                             <Box key={index} p={4} borderWidth={1} borderRadius="md" mb={4} backgroundColor="#1A1A1A">
                                 <HStack justify="space-between" align="center">
                                     <VStack align="start">
@@ -313,12 +365,16 @@ const ListAddressOwner: React.FC<ListAddressOwnerProps> = ({ ownerAddress = "0xf
             {/* Footer với nút phân trang */}
             <Box as="footer" p={4} textAlign="center">
                 <HStack spacing={2} justify="center">
-                    <Button colorScheme="pink">1</Button>
-                    <Button colorScheme="pink">2</Button>
-                    <Button colorScheme="pink">3</Button>
-                    <Button colorScheme="pink">4</Button>
-                    <Button colorScheme="pink">5</Button>
-                    <Button colorScheme="pink">Trang cuối</Button>
+                    {Array.from({ length: Math.ceil(deployedContracts.length / contractsPerPage) }, (_, index) => (
+                        <Button
+                            key={index + 1}
+                            colorScheme="pink"
+                            onClick={() => router.push(`/listaddress/${index + 1}`)}
+                            isActive={page === index + 1}
+                        >   
+                            {index + 1}
+                        </Button>
+                    ))}
                 </HStack>
             </Box>
         </VStack>

@@ -1,39 +1,30 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "./BinaryOptionMarket.sol";
+
 contract Factory {
     event Deployed(address indexed owner, address indexed contractAddress, uint index);
 
-    // Mapping để lưu trữ địa chỉ hợp đồng theo địa chỉ owner
     mapping(address => address[]) public ownerContracts;
 
-    function deploy(bytes32 salt, bytes memory bytecode) public {
-        address addr;
-        assembly {
-            addr := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
-        }
-        require(addr != address(0), "Deployment failed");
+    function deploy(address _walletAddress, uint256 _strikePrice) public returns (address) {
+        // Ensure the strike price is valid (greater than zero)
+        require(_strikePrice > 0, "Strike price must be greater than zero");
 
-
-        // Lưu địa chỉ hợp đồng vào mapping với chỉ mục
-        ownerContracts[msg.sender].push(addr);
+        // Deploy a new BinaryOptionMarket contract
+        BinaryOptionMarket newContract = new BinaryOptionMarket(msg.sender, _strikePrice);
         
-        // Phát sự kiện khi deploy thành công
-        emit Deployed(msg.sender, addr, ownerContracts[msg.sender].length - 1);
-
+        // Store the contract address in the mapping
+        ownerContracts[msg.sender].push(address(newContract));
+        
+        // Emit the Deployed event with the contract details
+        emit Deployed(msg.sender, address(newContract), ownerContracts[msg.sender].length - 1);
+        
+        return address(newContract);
     }
 
-    // Hàm để lấy danh sách hợp đồng của một owner
     function getContractsByOwner(address owner) public view returns (address[] memory) {
         return ownerContracts[owner];
-    }
-      // Hàm tính toán địa chỉ mà hợp đồng sẽ được triển khai
-    function getAddress(bytes32 salt, bytes memory bytecode) public view returns (address) {
-        return address(uint160(uint(keccak256(abi.encodePacked(
-            bytes1(0xff),
-            address(this),
-            salt,
-            keccak256(bytecode)
-        )))));
     }
 }

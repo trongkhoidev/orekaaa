@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useCallback } from 'react'; // Thêm import useCallback
-import { 
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
   Flex, Box, Text, Button, VStack, useToast, Input, 
   Select, HStack, Icon, ScaleFade, Table, Thead, Tbody, Tr, Th, Td
 } from '@chakra-ui/react';
@@ -11,6 +10,7 @@ import { motion, useAnimation } from 'framer-motion';
 import Owner from './Owner';
 import BinaryOptionMarket from '../../../out/BinaryOptionMarket.sol/BinaryOptionMarket.json';
 import { useRouter } from 'next/router';
+
 enum Side { Long, Short }
 enum Phase { Bidding, Trading, Maturity, Expiry }
 
@@ -19,7 +19,7 @@ interface Coin {
   label: string;
 }
 
-function Customer() {
+const Customer: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [selectedSide, setSelectedSide] = useState<Side | null>(null);
   const [walletAddress, setWalletAddress] = useState<string>("");
@@ -49,17 +49,9 @@ function Customer() {
 
   const toast = useToast();
   const priceControls = useAnimation();
-  const router = useRouter(); // Initialize the router
-  const [contractAddress, setContractAddress] = useState<string>("");
+  const [contractAddress, setContractAddress] = useState<string | null>(null);
+  const router = useRouter();
 
-  useEffect(() => {
-    // Check if contractAddress is available in the query parameters
-    if (router.query.contractAddress) {
-      setContractAddress(router.query.contractAddress as string); // Set the contractAddress from query
-    } else {
-      setContractAddress("0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"); // Default address if not provided
-    }
-  }, [router.query.contractAddress]); 
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -67,23 +59,82 @@ function Customer() {
       const signer = provider.getSigner();
       const newContract = new ethers.Contract(contractAddress, BinaryOptionMarket.abi, signer);
       setContract(newContract);
+      fetchMarketDetails(); 
     }
   }, [isLoggedIn]);
 
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     if (contract) {
+  //       fetchMarketDetails();
+  //     }
+  //   }, 5000); // Gọi hàm mỗi 5 giây
+  //   return () => clearInterval(interval); // Clear interval khi component bị unmount
+  // }, [contract]);
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (contract) {
-        fetchMarketDetails();
-      }
-    }, 5000); // Gọi hàm mỗi 5 giây
-    return () => clearInterval(interval); // Clear interval khi component bị unmount
+    // Kiểm tra nếu contract đã có sẵn
+    if (contract) {
+      const handlePhaseChange = async (newPhase: Phase) => {
+        console.log("Phase changed to:", newPhase); // Log để kiểm tra
+        setCurrentPhase(newPhase); // Cập nhật currentPhase
+      };
+
+      // Lắng nghe sự kiện PhaseChanged
+      contract.on("PhaseChanged", handlePhaseChange);
+
+      // Cleanup listener khi component unmount
+      return () => {
+        contract.off("PhaseChanged", handlePhaseChange);
+      };
+    }
+  }, [contract]); 
+  const fetchInitialPhase = async () => {
+    if (contract) {
+      const phase = await contract.currentPhase(); // Gọi hàm getPhase trên hợp đồng
+      setCurrentPhase(phase);
+      await fetchMarketDetails(); // Đồng bộ thông tin thị trường ban đầu
+    }
+  };
+
+  useEffect(() => {
+    fetchInitialPhase();
   }, [contract]);
+
+
+
+  useEffect(() => {
+    // Mỗi khi currentPhase thay đổi, cập nhật lại thông tin thị trường
+    if (currentPhase !== null) {
+      const fetchData = async () => {
+        await fetchMarketDetails(); // Gọi hàm để lấy thông tin thị trường mới
+      };
+      fetchData();
+    }
+  }, [currentPhase]);
+  
+  useEffect(() => {
+    if (contract) {
+      fetchMarketDetails(); // Gọi hàm để lấy thông tin thị trường khi currentPhase thay đổi
+    }
+  }, [currentPhase, contract]);
 
   useEffect(() => {
     if (contractAddress) {
         fetchContractBalance();
     }
 }, [contractAddress]);
+
+
+useEffect(() => {
+  // Lấy contractAddress từ localStorage
+  const address = localStorage.getItem('contractAddress');
+  if (address) {
+      setContractAddress(address);
+  } else {
+      // Nếu không có contractAddress, điều hướng về trang chủ hoặc trang khác
+      router.push('/'); // Hoặc trang bạn muốn điều hướng
+  }
+}, [router]);
 
 useEffect(() => {
   const fetchBalance = async () => {
@@ -97,6 +148,7 @@ useEffect(() => {
 
   fetchBalance();
 }, [walletAddress, contract]); 
+
   
   
 
@@ -142,8 +194,7 @@ useEffect(() => {
   };
 
   // Lấy trạng thái từ smart contract
-  
-  const fetchMarketDetails = useCallback(async () => {
+  const fetchMarketDetails = async (contract: ethers.Contract) => {
     if (contract) {
       try {
         const phase = await contract.currentPhase();
@@ -161,7 +212,7 @@ useEffect(() => {
         console.error("Error fetching market details:", error);
       }
     }
-  }, [contract]);
+  };
 
   const fetchContractBalance = async () => {
     try {
@@ -309,14 +360,14 @@ useEffect(() => {
     }
   };
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (contract && currentPhase !== Phase.Bidding) { // Ngăn không cho cập nhật trong phase Bidding
-        fetchMarketDetails();
-      }
-    }, 5000); // Gọi hàm mỗi 5 giây
-    return () => clearInterval(interval); // Clear interval khi component bị unmount
-  }, [contract, currentPhase]);
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     if (contract && currentPhase !== Phase.Bidding) { // Ngăn không cho cập nhật trong phase Bidding
+  //       fetchMarketDetails();
+  //     }
+  //   }, 5000); // Gọi hàm mỗi 5 giây
+  //   return () => clearInterval(interval); // Clear interval khi component bị unmount
+  // }, [contract, currentPhase]);
 
   // Hàm claimReward khi phase là Expiry
   const claimReward = async () => {
